@@ -299,7 +299,7 @@ header h1 span { color: var(--muted); font-weight: 400; }
 
   <div class="map-wrap">
     <div id="map"></div>
-    <div class="map-label">OpenSky ADS-B · KAUS region</div>
+    <div class="map-label">airplanes.live ADS-B · KAUS region</div>
   </div>
 
   <aside class="sidebar">
@@ -336,7 +336,7 @@ header h1 span { color: var(--muted); font-weight: 400; }
         <span class="status-dot" id="status-dot"></span>
         <span id="status-text">Connecting…</span>
       </div>
-      <span class="src-tag">OpenSky + AviationStack</span>
+      <span class="src-tag">airplanes.live + AviationStack</span>
     </div>
   </aside>
 </div>
@@ -405,36 +405,33 @@ function planeIcon(track, altFt, color) {
   return L.divIcon({ className: '', html: svg, iconSize: [size, size], iconAnchor: [size/2, size/2] });
 }
 
-// ── OpenSky fetch ─────────────────────────────────────────────────────────────
-async function fetchOpenSky() {
-  const url = `https://opensky-network.org/api/states/all`
-    + `?lamin=${BBOX.lamin}&lomin=${BBOX.lomin}&lamax=${BBOX.lamax}&lomax=${BBOX.lomax}`;
-  const res  = await fetch(PROXY(url));
-  const json = await res.json();
-  const data = JSON.parse(json.contents);
-  return data.states || [];
+// ── Fetch live aircraft — airplanes.live (free, no auth, HTTPS, no proxy needed)
+async function fetchPlanes() {
+  const url = `https://api.airplanes.live/v2/point/${AUS_LAT}/${AUS_LON}/100`;
+  const res  = await fetch(url);
+  if (!res.ok) throw new Error(`airplanes.live ${res.status}`);
+  const data = await res.json();
+  return data.ac || [];
 }
 
-function renderPlanes(states) {
+function renderPlanes(aircraft) {
   planeLayer.clearLayers();
   let totalAlt = 0, altCount = 0;
 
-  states.forEach(s => {
-    const icao     = s[0];
-    const callsign = (s[1] || '').trim();
-    const lon      = s[5], lat = s[6];
-    const altM     = s[7];
-    const onGround = s[8];
-    const speed    = s[9];
-    const track    = s[10];
-    const vrate    = s[11];
+  aircraft.forEach(a => {
+    const lat = a.lat, lon = a.lon;
+    if (lat == null || lon == null) return;
 
-    if (!lat || !lon) return;
+    const callsign = (a.flight || a.r || a.hex || '').trim();
+    const altFt    = typeof a.alt_baro === 'number' ? a.alt_baro : 0;
+    const onGround = a.alt_baro === 'ground' || altFt < 50;
+    const spdKts   = a.gs        || 0;
+    const track    = a.track     || 0;
+    const vrate    = a.baro_rate || 0;
+    const squawk   = a.squawk    || '';
+    const acType   = a.t         || '';
 
-    const altFt  = altM ? Math.round(altM * 3.281) : 0;
-    const spdKts = speed ? Math.round(speed * 1.944) : 0;
-
-    if (altM && !onGround) { totalAlt += altFt; altCount++; }
+    if (!onGround) { totalAlt += altFt; altCount++; }
 
     const color = onGround ? '#888888'
       : altFt > 30000 ? '#e07840'
@@ -444,7 +441,7 @@ function renderPlanes(states) {
 
     const marker = L.marker([lat, lon], {
       icon: planeIcon(track, altFt, color),
-      zIndexOffset: altFt,
+      zIndexOffset: onGround ? 0 : altFt,
     });
 
     const statusLine = onGround
@@ -452,19 +449,20 @@ function renderPlanes(states) {
       : `Alt: <span>${altFt.toLocaleString()} ft</span>`;
 
     marker.bindPopup(`
-      <div class="popup-cs">${callsign || icao.toUpperCase()}</div>
+      <div class="popup-cs">${esc(callsign) || a.hex?.toUpperCase()}</div>
+      ${acType ? `<div class="popup-row">Type: <span>${esc(acType)}</span></div>` : ''}
       <div class="popup-row">${statusLine}</div>
-      <div class="popup-row">Speed: <span>${spdKts} kts</span></div>
-      ${track != null ? `<div class="popup-row">Track: <span>${Math.round(track)}°</span></div>` : ''}
-      ${vrate ? `<div class="popup-row">V/S: <span>${vrate > 0 ? '+' : ''}${Math.round(vrate * 196)} fpm</span></div>` : ''}
-      ${s[14] ? `<div class="popup-row">Squawk: <span>${s[14]}</span></div>` : ''}
+      <div class="popup-row">Speed: <span>${Math.round(spdKts)} kts</span></div>
+      <div class="popup-row">Track: <span>${Math.round(track)}°</span></div>
+      ${vrate ? `<div class="popup-row">V/S: <span>${vrate > 0 ? '+' : ''}${Math.round(vrate)} fpm</span></div>` : ''}
+      ${squawk ? `<div class="popup-row">Squawk: <span>${esc(squawk)}</span></div>` : ''}
     `, { maxWidth: 180 });
 
     planeLayer.addLayer(marker);
   });
 
   const avgAlt = altCount ? Math.round(totalAlt / altCount / 100) * 100 : 0;
-  document.getElementById('stat-aircraft').textContent = states.length;
+  document.getElementById('stat-aircraft').textContent = aircraft.length;
   document.getElementById('stat-altitude').textContent = altCount ? (avgAlt/1000).toFixed(0)+'K' : '–';
 }
 
@@ -637,7 +635,7 @@ async function loadAll() {
   wrap.innerHTML = `<div class="loading-state"><div class="spinner"></div>Loading flights…</div>`;
 
   const [skyResult, flightResult] = await Promise.allSettled([
-    fetchOpenSky(),
+    fetchPlanes(),
     fetchFlights(),
   ]);
 
@@ -699,10 +697,10 @@ if (apiKey) {
 initMap();
 loadAll();
 
-// OpenSky refreshes every 30s; full reload every 3 minutes
+// Refresh plane positions every 15s; full reload every 3 min
 setInterval(async () => {
-  try { renderPlanes(await fetchOpenSky()); } catch(e) {}
-}, 30 * 1000);
+  try { renderPlanes(await fetchPlanes()); } catch(e) { console.warn('Plane refresh failed:', e); }
+}, 15 * 1000);
 
 setInterval(loadAll, 3 * 60 * 1000);
 </script>
