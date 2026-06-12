@@ -100,7 +100,7 @@ header h1 span { color: var(--muted); font-weight: 400; }
 #map { width: 100%; height: 100%; }
 
 /* Dark tile filter */
-.leaflet-tile { filter: brightness(0.70) saturate(0.5) hue-rotate(15deg); }
+.leaflet-tile { filter: brightness(0.70) saturate(0.6) hue-rotate(15deg); }
 
 .map-label {
   position: absolute; bottom: 10px; left: 10px;
@@ -689,6 +689,13 @@ setInterval(tickClock, 1000);
 tickClock();
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
+// Key priority: 1) ?key= URL param  2) localStorage  3) show input notice
+const urlKey = new URLSearchParams(window.location.search).get('key');
+if (urlKey) {
+  apiKey = urlKey;
+  localStorage.setItem('aviationstack_key', apiKey); // persist it going forward
+}
+
 if (apiKey) {
   document.getElementById('api-key-input').value = apiKey;
   document.getElementById('api-notice').style.display = 'none';
