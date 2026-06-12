@@ -709,7 +709,7 @@ setInterval(async () => {
   try { renderPlanes(await fetchPlanes()); } catch(e) { console.warn('Plane refresh failed:', e); }
 }, 15 * 1000);
 
-setInterval(loadAll, 3 * 60 * 1000);
+setInterval(loadAll, 15 * 60 * 1000);
 </script>
 </body>
 </html>
