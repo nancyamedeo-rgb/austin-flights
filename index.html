@@ -138,25 +138,16 @@ header h1 span { color: var(--muted); font-weight: 400; }
 .refresh-btn.spinning { animation: spin 0.7s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* API key notice */
-.api-notice {
+/* Data status notice (staleness / fetch error) */
+.data-notice {
   font-size: 10px; line-height: 1.55; padding: 9px 13px;
   background: rgba(224,120,60,0.07);
   border-bottom: 1px solid rgba(224,120,60,0.18);
   color: var(--muted); flex-shrink: 0;
 }
-.api-notice strong { color: var(--accent); }
-.api-notice a { color: var(--accent); }
-.api-notice input {
-  flex: 1; background: rgba(0,0,0,0.3); border: 1px solid var(--border);
-  border-radius: 4px; color: var(--text); font-size: 11px;
-  padding: 4px 8px; font-family: var(--font-ui);
-}
-.api-notice .key-row { display: flex; gap: 6px; margin-top: 7px; }
-.api-notice button {
-  background: var(--accent); color: #fff; border: none; border-radius: 4px;
-  padding: 4px 10px; font-size: 11px; cursor: pointer; font-weight: 600;
-}
+.data-notice strong { color: var(--accent); }
+.data-notice.warn { background: rgba(251,191,36,0.08); border-bottom-color: rgba(251,191,36,0.2); }
+.data-notice.warn strong { color: var(--yellow); }
 
 /* Tabs */
 .tabs { display: flex; border-bottom: 1px solid var(--border); flex-shrink: 0; }
@@ -215,6 +206,8 @@ header h1 span { color: var(--muted); font-weight: 400; }
 .tag-on-time   { background: rgba(52,211,153,0.15);  color: var(--green); }
 .tag-delayed   { background: rgba(251,191,36,0.15);  color: var(--yellow); }
 .tag-cancelled { background: rgba(248,113,113,0.15); color: var(--red); }
+.tag-ground    { background: rgba(154,144,136,0.18); color: var(--muted); }
+.tag-estimate  { background: rgba(96,165,250,0.13);  color: var(--blue); }
 .tag-arrival   { background: rgba(245,200,66,0.15);  color: var(--accent2); }
 .tag-departure { background: rgba(224,120,60,0.15);  color: var(--accent); }
 .tag-enroute   { background: rgba(52,211,153,0.12);  color: var(--green); }
@@ -287,7 +280,7 @@ header h1 span { color: var(--muted); font-weight: 400; }
   </div>
   <div class="stat-cell">
     <div class="stat-num col-yellow" id="stat-delayed">–</div>
-    <div class="stat-label">Delayed</div>
+    <div class="stat-label" id="stat-delayed-label">On Ground</div>
   </div>
   <div class="stat-cell">
     <div class="stat-num col-muted"  id="stat-altitude">–</div>
@@ -308,14 +301,7 @@ header h1 span { color: var(--muted); font-weight: 400; }
       <button class="refresh-btn" id="refresh-btn" onclick="loadAll()">↻ Refresh</button>
     </div>
 
-    <div class="api-notice" id="api-notice">
-      <strong>AviationStack key needed</strong> for arrivals/departures.<br>
-      Free tier: 500 req/month — <a href="https://aviationstack.com/signup/free" target="_blank">sign up here</a>.
-      <div class="key-row">
-        <input id="api-key-input" type="text" placeholder="Paste your API key here">
-        <button onclick="saveKey()">Save</button>
-      </div>
-    </div>
+    <div class="data-notice" id="data-notice" style="display:none;"></div>
 
     <div class="tabs">
       <div class="tab active" data-tab="all"        onclick="setTab('all')">All</div>
@@ -336,7 +322,7 @@ header h1 span { color: var(--muted); font-weight: 400; }
         <span class="status-dot" id="status-dot"></span>
         <span id="status-text">Connecting…</span>
       </div>
-      <span class="src-tag">airplanes.live + AviationStack</span>
+      <span class="src-tag">airplanes.live (cached via GitHub Action)</span>
     </div>
   </aside>
 </div>
@@ -346,22 +332,28 @@ header h1 span { color: var(--muted); font-weight: 400; }
 // ── Config — Austin-Bergstrom (KAUS) ─────────────────────────────────────────
 const AUS_LAT = 30.1944, AUS_LON = -97.6699;
 
-// Bounding box ~80nm around KAUS
-const BBOX = { lamin: 29.0, lomin: -99.2, lamax: 31.4, lomax: -96.0 };
+// Bounding box ~80nm around KAUS (kept for reference; airplanes.live's
+// /point endpoint uses a radius instead, see fetchPlanes() below)
 
-const PROXY = u => `https://api.allorigins.win/get?url=${encodeURIComponent(u)}`;
-
-let apiKey     = localStorage.getItem('aviationstack_key') || '';
-let allFlights = [];
-let activeTab  = 'all';
+let allFlights   = [];
+let activeTab    = 'all';
+let lastFetchMeta = null;
 let map, planeLayer;
 
-// ── Airline colors ────────────────────────────────────────────────────────────
+// ── Airline colors & names (keyed by 3-letter ICAO callsign prefix) ───────────
 const AIRLINE_COLORS = {
   'UAL': '#0066cc', 'SWA': '#ff6b00', 'DAL': '#cc0000',
   'AAL': '#003087', 'SKW': '#00529b', 'FFT': '#6bb500',
-  'JBU': '#003876', 'ASA': '#00853e', 'WN':  '#ff6b00',
+  'JBU': '#003876', 'ASA': '#00853e', 'ENY': '#003087',
+  'EDV': '#cc0000', 'RPA': '#003087', 'QXE': '#00529b',
   'default': '#e07840'
+};
+const AIRLINE_NAMES = {
+  'UAL': 'United', 'SWA': 'Southwest', 'DAL': 'Delta',
+  'AAL': 'American', 'SKW': 'SkyWest', 'FFT': 'Frontier',
+  'JBU': 'JetBlue', 'ASA': 'Alaska', 'ENY': 'Envoy Air',
+  'EDV': 'Endeavor Air', 'RPA': 'Republic Airways', 'QXE': 'Horizon Air',
+  'GJS': 'GoJet', 'SCX': 'Sun Country', 'NKS': 'Spirit',
 };
 function airlineColor(iata) {
   return AIRLINE_COLORS[iata] || AIRLINE_COLORS.default;
@@ -466,142 +458,110 @@ function renderPlanes(aircraft) {
   document.getElementById('stat-altitude').textContent = altCount ? (avgAlt/1000).toFixed(0)+'K' : '–';
 }
 
-// ── AviationStack fetch ───────────────────────────────────────────────────────
+// ── Cached flight data fetch — same-origin static JSON, no CORS, no key ───────
+// This file is written by a GitHub Action (scripts/fetch_flights.py) on a
+// 15-minute cron and committed to the gh-pages branch. The widget just reads
+// it like any other static asset — no API key in the browser, no proxy.
+const FLIGHTS_JSON_PATH = './flights.json';
+
 async function fetchFlights() {
-  if (!apiKey) return [];
-
-  const proxies = [
-    u => `https://api.allorigins.win/get?url=${encodeURIComponent(u)}`,
-    u => `https://corsproxy.io/?${encodeURIComponent(u)}`,
-  ];
-
-  const base   = `http://api.aviationstack.com/v1/flights?access_key=${apiKey}`;
-  const arrUrl = `${base}&arr_iata=AUS&limit=25`;
-  const depUrl = `${base}&dep_iata=AUS&limit=25`;
-
-  for (const makeProxy of proxies) {
-    try {
-      const [arrRes, depRes] = await Promise.all([
-        fetch(makeProxy(arrUrl)),
-        fetch(makeProxy(depUrl)),
-      ]);
-
-      const flights = [];
-
-      for (const res of [arrRes, depRes]) {
-        if (!res.ok) continue;
-        const wrapper = await res.json();
-        const raw  = wrapper.contents !== undefined ? wrapper.contents : JSON.stringify(wrapper);
-        const data = JSON.parse(raw);
-        if (data.error) throw new Error(data.error.info || 'API error');
-        if (data.data) flights.push(...data.data);
-      }
-
-      if (flights.length > 0) return flights;
-    } catch(e) {
-      console.warn('Proxy attempt failed:', e.message);
-    }
-  }
-
-  throw new Error('All proxy attempts failed');
+  const res = await fetch(`${FLIGHTS_JSON_PATH}?_=${Date.now()}`, { cache: 'no-store' });
+  if (!res.ok) throw new Error(`flights.json ${res.status}`);
+  const data = await res.json();
+  lastFetchMeta = data;
+  return data.flights || [];
 }
 
 // ── Flight rendering ──────────────────────────────────────────────────────────
-function flightStatus(f) {
-  const s = (f.flight_status || '').toLowerCase();
-  if (s === 'cancelled') return 'cancelled';
-  if (s === 'active' || s === 'en-route') return 'enroute';
-  const depDelay = f.departure?.delay || 0;
-  const arrDelay = f.arrival?.delay   || 0;
-  if (depDelay > 15 || arrDelay > 15) return 'delayed';
-  if (s === 'landed') return 'on-time';
-  return s || 'scheduled';
+// Record shape (from flights.json, written by scripts/fetch_flights.py):
+// { icao24, callsign, registration, aircraft_type, category, lat, lon,
+//   altitude_ft, on_ground, ground_speed_kt, track_deg, vertical_rate_fpm,
+//   squawk, distance_nm }
+// category is one of: 'arrival' | 'departure' | 'ground' | 'overflight'
+// This is derived from live ADS-B position data, not an airline schedule feed —
+// there are no gates, terminals, or scheduled times here, only what's
+// physically observable right now.
+
+function isArrival(f) { return f.category === 'arrival'; }
+function isDeparture(f) { return f.category === 'departure'; }
+
+function airlineFromCallsign(callsign) {
+  if (!callsign) return { iata: '', name: '' };
+  const code3 = callsign.slice(0, 3).toUpperCase();
+  return { iata: code3, name: AIRLINE_NAMES[code3] || '' };
 }
 
-function fmtTime(iso) {
-  if (!iso) return '–';
-  return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+function flightLabel(f) {
+  if (f.callsign) return f.callsign;
+  if (f.registration) return f.registration;
+  return f.icao24 ? f.icao24.toUpperCase() : '—';
 }
-
-function isArrival(f) { return f.arrival?.iata === 'AUS'; }
 
 function renderFlights(flights) {
   const wrap = document.getElementById('flight-wrap');
-  let arrivals = 0, departures = 0, delayed = 0;
+  let arrivals = 0, departures = 0, ground = 0;
 
   flights.forEach(f => {
-    if (isArrival(f)) arrivals++; else departures++;
-    if (flightStatus(f) === 'delayed') delayed++;
+    if (f.category === 'arrival') arrivals++;
+    else if (f.category === 'departure') departures++;
+    else if (f.category === 'ground') ground++;
   });
 
   document.getElementById('stat-arrivals').textContent   = arrivals;
   document.getElementById('stat-departures').textContent = departures;
-  document.getElementById('stat-delayed').textContent    = delayed;
+  document.getElementById('stat-delayed').textContent    = ground;
+  document.getElementById('stat-delayed-label').textContent = 'On Ground (KAUS)';
 
-  const filtered = activeTab === 'all'        ? flights
-    : activeTab === 'arrivals'   ? flights.filter(f =>  isArrival(f))
-    : activeTab === 'departures' ? flights.filter(f => !isArrival(f))
-    : flights.filter(f => flightStatus(f) === 'delayed');
+  // Only show flights relevant to the board — skip pure overflights by default
+  const relevant = flights.filter(f => f.category !== 'overflight');
+
+  const filtered = activeTab === 'all'        ? relevant
+    : activeTab === 'arrivals'   ? relevant.filter(isArrival)
+    : activeTab === 'departures' ? relevant.filter(isDeparture)
+    : relevant.filter(f => f.category === 'ground');
 
   if (!filtered.length) {
-    wrap.innerHTML = `<div class="empty-state">No flights in this category</div>`;
+    wrap.innerHTML = `<div class="empty-state">No aircraft in this category<br>near KAUS right now</div>`;
     return;
   }
 
   wrap.innerHTML = filtered.map(f => {
     const arrival     = isArrival(f);
-    const status      = flightStatus(f);
-    const dep         = f.departure, arr = f.arrival;
-    const flightNum   = f.flight?.iata || f.flight?.icao || '–';
-    const airline     = f.airline?.name || '';
-    const airlineIata = f.airline?.iata || '';
-    const color       = airlineColor(airlineIata);
+    const departure    = isDeparture(f);
+    const onGround     = f.category === 'ground';
+    const airline      = airlineFromCallsign(f.callsign);
+    const color        = airlineColor(airline.iata);
 
-    const from = dep?.iata || dep?.icao || '?';
-    const to   = arr?.iata || arr?.icao || '?';
-    const routeLabel = arrival
-      ? `${from} → <strong>AUS</strong>`
-      : `<strong>AUS</strong> → ${to}`;
+    const routeLabel = onGround
+      ? `<strong>AUS</strong> · Taxi/Ground`
+      : arrival
+        ? `Inbound → <strong>AUS</strong>`
+        : `<strong>AUS</strong> → Outbound`;
 
-    const schTime  = arrival ? arr?.scheduled : dep?.scheduled;
-    const estTime  = arrival ? arr?.estimated : dep?.estimated;
-    const actTime  = arrival ? arr?.actual     : dep?.actual;
-    const showTime = actTime || estTime || schTime;
-    const delay    = arrival ? (arr?.delay || 0) : (dep?.delay || 0);
+    const altLabel = onGround ? 'Ground' : `${Math.round(f.altitude_ft).toLocaleString()} ft`;
+    const spdLabel = f.ground_speed_kt != null ? `${Math.round(f.ground_speed_kt)} kt` : '–';
 
-    const statusTagCls = status === 'on-time'   ? 'tag-on-time'
-      : status === 'delayed'    ? 'tag-delayed'
-      : status === 'cancelled'  ? 'tag-cancelled'
-      : status === 'enroute'    ? 'tag-enroute'
-      : '';
-
-    const statusLabel = status === 'on-time'  ? 'On Time'
-      : status === 'delayed'   ? `+${delay}m delay`
-      : status === 'cancelled' ? 'Cancelled'
-      : status === 'enroute'   ? 'En Route'
-      : status;
-
-    const terminal = arrival ? arr?.terminal : dep?.terminal;
-    const gate     = arrival ? arr?.gate     : dep?.gate;
+    const categoryTagCls = arrival ? 'tag-arrival' : departure ? 'tag-departure' : onGround ? 'tag-ground' : '';
+    const categoryLabel  = arrival ? '↓ Arrival' : departure ? '↑ Departure' : onGround ? '⊙ On Ground' : '';
 
     return `<div class="flight-card">
       <div class="fc-top">
         <div class="fc-bar" style="background:${color}"></div>
         <div class="fc-main">
-          <div class="fc-flight">${esc(flightNum)}</div>
+          <div class="fc-flight">${esc(flightLabel(f))}</div>
           <div class="fc-route">${routeLabel}</div>
-          <div class="fc-airline">${esc(airline)}</div>
+          <div class="fc-airline">${esc(airline.name || f.aircraft_type || '')}</div>
         </div>
         <div class="fc-times">
-          <div class="fc-time-main">${fmtTime(showTime)}</div>
-          <div class="fc-time-sub">${arrival ? 'ARR' : 'DEP'}</div>
+          <div class="fc-time-main">${altLabel}</div>
+          <div class="fc-time-sub">${spdLabel}</div>
         </div>
       </div>
       <div class="fc-meta">
-        <span class="tag ${arrival ? 'tag-arrival' : 'tag-departure'}">${arrival ? '↓ Arrival' : '↑ Departure'}</span>
-        ${statusTagCls ? `<span class="tag ${statusTagCls}">${esc(statusLabel)}</span>` : ''}
-        ${terminal ? `<span class="tag">T${esc(terminal)}</span>` : ''}
-        ${gate     ? `<span class="tag">Gate ${esc(gate)}</span>` : ''}
+        ${categoryTagCls ? `<span class="tag ${categoryTagCls}">${categoryLabel}</span>` : ''}
+        <span class="tag tag-estimate">ADS-B derived</span>
+        ${f.distance_nm != null ? `<span class="tag">${f.distance_nm} nm out</span>` : ''}
+        ${f.aircraft_type ? `<span class="tag">${esc(f.aircraft_type)}</span>` : ''}
       </div>
     </div>`;
   }).join('');
@@ -613,16 +573,23 @@ function setTab(tab) {
   renderFlights(allFlights);
 }
 
-// ── API key ───────────────────────────────────────────────────────────────────
-function saveKey() {
-  apiKey = document.getElementById('api-key-input').value.trim();
-  if (!apiKey) return;
-  localStorage.setItem('aviationstack_key', apiKey);
-  document.getElementById('api-notice').style.display = 'none';
-  loadAll();
+// ── Main load ─────────────────────────────────────────────────────────────────
+function minutesAgo(isoOrUnix) {
+  if (!isoOrUnix) return null;
+  const ts = typeof isoOrUnix === 'number' ? isoOrUnix * 1000 : new Date(isoOrUnix).getTime();
+  return Math.max(0, Math.round((Date.now() - ts) / 60000));
 }
 
-// ── Main load ─────────────────────────────────────────────────────────────────
+function showDataNotice(html, level) {
+  const el = document.getElementById('data-notice');
+  el.innerHTML = html;
+  el.className = `data-notice${level ? ' ' + level : ''}`;
+  el.style.display = 'block';
+}
+function hideDataNotice() {
+  document.getElementById('data-notice').style.display = 'none';
+}
+
 async function loadAll() {
   const btn  = document.getElementById('refresh-btn');
   const dot  = document.getElementById('status-dot');
@@ -643,28 +610,31 @@ async function loadAll() {
     renderPlanes(skyResult.value);
   }
 
-  if (flightResult.status === 'fulfilled' && flightResult.value.length) {
+  if (flightResult.status === 'fulfilled') {
     allFlights = flightResult.value;
     renderFlights(allFlights);
-    dot.className = 'status-dot live';
-    stat.textContent = `Updated ${new Date().toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' })}`;
-  } else {
-    if (!apiKey) {
-      document.getElementById('api-notice').style.display = 'block';
-      wrap.innerHTML = `<div class="empty-state">Enter your AviationStack key above<br>to see arrivals &amp; departures.<br><br>Aircraft positions load automatically<br>from OpenSky — no key needed.</div>`;
+
+    const age = lastFetchMeta ? minutesAgo(lastFetchMeta.generated_at_unix) : null;
+    if (lastFetchMeta?.fetch_error) {
+      showDataNotice(`<strong>Last scheduled fetch had an error</strong><br>Showing the most recent good data (${age != null ? age + ' min old' : 'age unknown'}).<br><span style="color:var(--muted);font-size:10px">${esc(lastFetchMeta.fetch_error)}</span>`, 'warn');
+    } else if (age != null && age > 30) {
+      showDataNotice(`<strong>Data is ${age} minutes old</strong><br>The GitHub Action may be paused or failing — check the repo's Actions tab.`, 'warn');
     } else {
-      const errMsg = flightResult.reason?.message || 'Unknown error';
-      document.getElementById('api-notice').style.display = 'block';
-      wrap.innerHTML = `<div class="error-state">
-        Flight data failed to load.<br><br>
-        <span style="color:var(--muted);font-size:10px">${esc(errMsg)}</span><br><br>
-        Double-check your API key or try refreshing.
-        <br><br>
-        <span style="color:var(--muted);font-size:10px">
-          Aircraft radar still works (OpenSky, no key needed).
-        </span>
-      </div>`;
+      hideDataNotice();
     }
+
+    dot.className = 'status-dot live';
+    stat.textContent = age != null ? `Cached ${age}m ago` : `Updated ${new Date().toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' })}`;
+  } else {
+    const errMsg = flightResult.reason?.message || 'Unknown error';
+    showDataNotice(`<strong>Couldn't load flights.json</strong><br>${esc(errMsg)}<br><br>Make sure the GitHub Action has run at least once and this widget is served from the same origin as flights.json (e.g. your gh-pages site).`, 'warn');
+    wrap.innerHTML = `<div class="error-state">
+      Flight data failed to load.<br><br>
+      <span style="color:var(--muted);font-size:10px">${esc(errMsg)}</span><br><br>
+      <span style="color:var(--muted);font-size:10px">
+        Aircraft radar still works (airplanes.live, no key needed).
+      </span>
+    </div>`;
     dot.className = 'status-dot';
     stat.textContent = skyResult.status === 'fulfilled' ? 'Aircraft only (no flight data)' : 'Connection error';
   }
@@ -689,27 +659,18 @@ setInterval(tickClock, 1000);
 tickClock();
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
-// Key priority: 1) ?key= URL param  2) localStorage  3) show input notice
-const urlKey = new URLSearchParams(window.location.search).get('key');
-if (urlKey) {
-  apiKey = urlKey;
-  localStorage.setItem('aviationstack_key', apiKey); // persist it going forward
-}
-
-if (apiKey) {
-  document.getElementById('api-key-input').value = apiKey;
-  document.getElementById('api-notice').style.display = 'none';
-}
-
 initMap();
 loadAll();
 
-// Refresh plane positions every 15s; full reload every 3 min
+// Refresh live plane positions every 15s (airplanes.live, client-side, no key,
+// no CORS issue — same endpoint the cron script polls server-side).
+// Re-check the cached flights.json every 2 min — cheap, same-origin, and lets
+// the board pick up a new GitHub Action run shortly after it lands.
 setInterval(async () => {
   try { renderPlanes(await fetchPlanes()); } catch(e) { console.warn('Plane refresh failed:', e); }
 }, 15 * 1000);
 
-setInterval(loadAll, 15 * 60 * 1000);
+setInterval(loadAll, 2 * 60 * 1000);
 </script>
 </body>
 </html>
