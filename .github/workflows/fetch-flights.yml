@@ -1,0 +1,47 @@
+name: Fetch AUS flight data
+
+on:
+  schedule:
+    # Every 15 minutes. GitHub may delay scheduled runs slightly under load —
+    # that's fine, the widget shows "last updated" so staleness is visible.
+    - cron: '*/15 * * * *'
+  workflow_dispatch: {}   # lets you trigger a manual run from the Actions tab
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/fetch_flights.py'
+      - '.github/workflows/fetch-flights.yml'
+
+permissions:
+  contents: write   # needed to commit docs/flights.json back to the repo
+
+concurrency:
+  group: fetch-flights
+  cancel-in-progress: false
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Fetch live flight data
+        run: python scripts/fetch_flights.py
+
+      - name: Commit and push if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/flights.json
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "Update flight data $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+            git push
+          fi
