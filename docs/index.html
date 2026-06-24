@@ -10,18 +10,18 @@
 @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Inter:wght@400;500;600&display=swap');
 
 :root {
-  --surface:    #ffffff;
-  --surface-lt: #f4f5f7;
-  --border:     rgba(0,0,0,0.10);
-  --border-atx: rgba(180,80,20,0.30);
-  --text:       #1a1a1a;
-  --muted:      #666666;
-  --accent:     #c05a18;
-  --accent2:    #9a7000;
-  --green:      #0d7a4a;
-  --yellow:     #b07a00;
-  --red:        #c0392b;
-  --blue:       #1a5fa8;
+  --surface:    #1c1f26;
+  --surface-lt: #14161c;
+  --border:     rgba(255,255,255,0.10);
+  --border-atx: rgba(255,140,60,0.35);
+  --text:       #eeeae4;
+  --muted:      #a0a8b8;
+  --accent:     #ff8c3a;
+  --accent2:    #f5cc42;
+  --green:      #3ddba0;
+  --yellow:     #f5cc42;
+  --red:        #ff6b6b;
+  --blue:       #7ab8ff;
   --font-ui:    'DM Mono', 'Courier New', monospace;
   --font-body:  'Inter', system-ui, sans-serif;
   --radius:     6px;
@@ -104,22 +104,22 @@ header h1 span { color: var(--muted); font-weight: 400; }
 
 .map-label {
   position: absolute; bottom: 10px; left: 10px;
-  background: rgba(255,255,255,0.85); border: 1px solid rgba(0,0,0,0.12);
+  background: rgba(20,22,28,0.85); border: 1px solid rgba(255,255,255,0.12);
   border-radius: var(--radius); font-family: var(--font-ui);
   font-size: 9px; letter-spacing: 0.07em; text-transform: uppercase;
-  color: #555; padding: 4px 8px; pointer-events: none; z-index: 1000;
+  color: #a0a8b8; padding: 4px 8px; pointer-events: none; z-index: 1000;
 }
 
 .map-legend {
   position: absolute; bottom: 10px; right: 10px;
-  background: rgba(255,255,255,0.90); border: 1px solid rgba(0,0,0,0.12);
+  background: rgba(20,22,28,0.88); border: 1px solid rgba(255,255,255,0.12);
   border-radius: var(--radius); font-family: var(--font-ui);
   font-size: 9px; letter-spacing: 0.05em; text-transform: uppercase;
-  color: #444; padding: 6px 10px; pointer-events: none; z-index: 1000;
+  color: #a0a8b8; padding: 6px 10px; pointer-events: none; z-index: 1000;
   line-height: 1.8;
 }
 .map-legend-row { display: flex; align-items: center; gap: 6px; }
-.map-legend-dot { width: 10px; height: 10px; border-radius: 2px; border: 1.5px solid white; flex-shrink: 0; box-shadow: 0 0 0 1px rgba(0,0,0,0.2); }
+.map-legend-dot { width: 10px; height: 10px; border-radius: 2px; border: 1.5px solid rgba(255,255,255,0.2); flex-shrink: 0; }
 
 /* ── Sidebar ── */
 .sidebar {
@@ -212,7 +212,7 @@ header h1 span { color: var(--muted); font-weight: 400; }
 .tag {
   font-family: var(--font-ui); font-size: 8px; letter-spacing: 0.05em;
   text-transform: uppercase; padding: 2px 5px; border-radius: 2px;
-  background: rgba(0,0,0,0.07); color: var(--muted);
+  background: rgba(255,255,255,0.08); color: var(--muted);
 }
 .tag-on-time   { background: rgba(52,211,153,0.15);  color: var(--green); }
 .tag-delayed   { background: rgba(251,191,36,0.15);  color: var(--yellow); }
@@ -235,20 +235,20 @@ header h1 span { color: var(--muted); font-weight: 400; }
 @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
 .src-tag {
   font-family: var(--font-ui); font-size: 8px; color: var(--muted);
-  background: rgba(0,0,0,0.06); border-radius: 10px; padding: 1px 7px;
+  background: rgba(255,255,255,0.06); border-radius: 10px; padding: 1px 7px;
 }
 
 /* Leaflet popup */
 .leaflet-popup-content-wrapper {
-  background: #ffffff !important;
+  background: #252830 !important;
   border: 1px solid var(--border-atx) !important;
   border-radius: 6px !important;
   color: var(--text) !important;
   font-family: var(--font-body) !important;
   font-size: 11px !important;
-  box-shadow: 0 4px 20px rgba(0,0,0,0.15) !important;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.6) !important;
 }
-.leaflet-popup-tip { background: #ffffff !important; }
+.leaflet-popup-tip { background: #252830 !important; }
 .leaflet-popup-close-button { color: var(--muted) !important; }
 .popup-cs  { font-family: var(--font-ui); font-size: 12px; font-weight: 500; color: var(--accent); }
 .popup-row { color: var(--muted); margin-top: 2px; }
@@ -305,11 +305,11 @@ header h1 span { color: var(--muted); font-weight: 400; }
     <div id="map"></div>
     <div class="map-label">airplanes.live ADS-B · KAUS region</div>
     <div class="map-legend">
-      <div class="map-legend-row"><div class="map-legend-dot" style="background:#d94f00"></div> High (&gt;30K ft)</div>
-      <div class="map-legend-row"><div class="map-legend-dot" style="background:#b8860b"></div> Mid (15–30K ft)</div>
-      <div class="map-legend-row"><div class="map-legend-dot" style="background:#0a8a4a"></div> Low (5–15K ft)</div>
-      <div class="map-legend-row"><div class="map-legend-dot" style="background:#1565c0"></div> Approach (&lt;5K ft)</div>
-      <div class="map-legend-row"><div class="map-legend-dot" style="background:#555"></div> Ground</div>
+      <div class="map-legend-row"><div class="map-legend-dot" style="background:#ff8c3a"></div> High (&gt;30K ft)</div>
+      <div class="map-legend-row"><div class="map-legend-dot" style="background:#f5cc42"></div> Mid (15–30K ft)</div>
+      <div class="map-legend-row"><div class="map-legend-dot" style="background:#3ddba0"></div> Low (5–15K ft)</div>
+      <div class="map-legend-row"><div class="map-legend-dot" style="background:#7ab8ff"></div> Approach (&lt;5K ft)</div>
+      <div class="map-legend-row"><div class="map-legend-dot" style="background:#778090"></div> Ground</div>
     </div>
   </div>
 
@@ -386,7 +386,7 @@ function initMap() {
     attributionControl: false,
   });
 
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
     maxZoom: 19,
     subdomains: 'abcd',
   }).addTo(map);
@@ -444,11 +444,11 @@ function renderPlanes(aircraft) {
 
     if (!onGround) { totalAlt += altFt; altCount++; }
 
-    const color = onGround ? '#555555'
-      : altFt > 30000 ? '#d94f00'
-      : altFt > 15000 ? '#b8860b'
-      : altFt > 5000  ? '#0a8a4a'
-      : '#1565c0';
+    const color = onGround ? '#778090'
+      : altFt > 30000 ? '#ff8c3a'
+      : altFt > 15000 ? '#f5cc42'
+      : altFt > 5000  ? '#3ddba0'
+      : '#7ab8ff';
 
     const marker = L.marker([lat, lon], {
       icon: planeIcon(track, altFt, color),
