@@ -99,16 +99,27 @@ header h1 span { color: var(--muted); font-weight: 400; }
 .map-wrap { flex: 1; position: relative; overflow: hidden; }
 #map { width: 100%; height: 100%; }
 
-/* Dark tile filter */
-.leaflet-tile { filter: brightness(0.70) saturate(0.6) hue-rotate(15deg); }
+/* Light map — no filter needed */
+.leaflet-tile { filter: none; }
 
 .map-label {
   position: absolute; bottom: 10px; left: 10px;
-  background: rgba(0,0,0,0.6); border: 1px solid var(--border);
+  background: rgba(255,255,255,0.85); border: 1px solid rgba(0,0,0,0.12);
   border-radius: var(--radius); font-family: var(--font-ui);
   font-size: 9px; letter-spacing: 0.07em; text-transform: uppercase;
-  color: var(--muted); padding: 4px 8px; pointer-events: none; z-index: 1000;
+  color: #555; padding: 4px 8px; pointer-events: none; z-index: 1000;
 }
+
+.map-legend {
+  position: absolute; bottom: 10px; right: 10px;
+  background: rgba(255,255,255,0.90); border: 1px solid rgba(0,0,0,0.12);
+  border-radius: var(--radius); font-family: var(--font-ui);
+  font-size: 9px; letter-spacing: 0.05em; text-transform: uppercase;
+  color: #444; padding: 6px 10px; pointer-events: none; z-index: 1000;
+  line-height: 1.8;
+}
+.map-legend-row { display: flex; align-items: center; gap: 6px; }
+.map-legend-dot { width: 10px; height: 10px; border-radius: 2px; border: 1.5px solid white; flex-shrink: 0; box-shadow: 0 0 0 1px rgba(0,0,0,0.2); }
 
 /* ── Sidebar ── */
 .sidebar {
@@ -246,9 +257,9 @@ header h1 span { color: var(--muted); font-weight: 400; }
 .airport-icon {
   background: var(--accent);
   border-radius: 50%;
-  border: 2px solid rgba(0,0,0,0.6);
-  width: 12px; height: 12px;
-  box-shadow: 0 0 10px var(--accent);
+  border: 3px solid white;
+  width: 14px; height: 14px;
+  box-shadow: 0 0 0 2px var(--accent), 0 2px 6px rgba(0,0,0,0.4);
 }
 </style>
 </head>
@@ -293,6 +304,13 @@ header h1 span { color: var(--muted); font-weight: 400; }
   <div class="map-wrap">
     <div id="map"></div>
     <div class="map-label">airplanes.live ADS-B · KAUS region</div>
+    <div class="map-legend">
+      <div class="map-legend-row"><div class="map-legend-dot" style="background:#d94f00"></div> High (&gt;30K ft)</div>
+      <div class="map-legend-row"><div class="map-legend-dot" style="background:#b8860b"></div> Mid (15–30K ft)</div>
+      <div class="map-legend-row"><div class="map-legend-dot" style="background:#0a8a4a"></div> Low (5–15K ft)</div>
+      <div class="map-legend-row"><div class="map-legend-dot" style="background:#1565c0"></div> Approach (&lt;5K ft)</div>
+      <div class="map-legend-row"><div class="map-legend-dot" style="background:#555"></div> Ground</div>
+    </div>
   </div>
 
   <aside class="sidebar">
@@ -368,8 +386,9 @@ function initMap() {
     attributionControl: false,
   });
 
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 13,
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+    maxZoom: 19,
+    subdomains: 'abcd',
   }).addTo(map);
 
   // Airport marker
@@ -390,9 +409,9 @@ function planeIcon(track, altFt, color) {
   const size = altFt > 30000 ? 20 : altFt > 15000 ? 17 : 14;
   const opacity = altFt < 500 ? 0.5 : 0.92;
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24"
-    style="transform:rotate(${track || 0}deg);transform-origin:center;opacity:${opacity};filter:drop-shadow(0 0 3px ${color})">
+    style="transform:rotate(${track || 0}deg);transform-origin:center;opacity:${opacity};filter:drop-shadow(0 1px 2px rgba(0,0,0,0.5))">
     <path d="M12 2 L8 10 L2 10 L2 12 L8 12 L7 18 L5 19 L5 21 L12 19 L19 21 L19 19 L17 18 L16 12 L22 12 L22 10 L16 10 Z"
-      fill="${color}" stroke="rgba(0,0,0,0.4)" stroke-width="0.5"/>
+      fill="${color}" stroke="white" stroke-width="1.5"/>
   </svg>`;
   return L.divIcon({ className: '', html: svg, iconSize: [size, size], iconAnchor: [size/2, size/2] });
 }
@@ -425,11 +444,11 @@ function renderPlanes(aircraft) {
 
     if (!onGround) { totalAlt += altFt; altCount++; }
 
-    const color = onGround ? '#888888'
-      : altFt > 30000 ? '#e07840'
-      : altFt > 15000 ? '#f5c842'
-      : altFt > 5000  ? '#34d399'
-      : '#60a5fa';
+    const color = onGround ? '#555555'
+      : altFt > 30000 ? '#d94f00'
+      : altFt > 15000 ? '#b8860b'
+      : altFt > 5000  ? '#0a8a4a'
+      : '#1565c0';
 
     const marker = L.marker([lat, lon], {
       icon: planeIcon(track, altFt, color),
